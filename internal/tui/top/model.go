@@ -2,7 +2,6 @@ package top
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	"charm.land/bubbles/v2/key"
@@ -153,7 +152,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.help.Toggle()
 
 	case chat.SendMessageMsg:
-		cmd = append(cmd, m.executeTask(msg.Content))
+		cmd = append(cmd, m.handleSendMessageMsg(msg.Content))
 
 	case chat.StreamStartMsg, chat.StreamChunkMsg, chat.StreamCompleteMsg, chat.FeedbackRequestMsg:
 		// Forward streaming messages to chat model
@@ -231,159 +230,6 @@ func (m *model) View() tea.View {
 	v := tea.NewView(content)
 	v.AltScreen = true
 	return v
-}
-
-// executeTask sends a message to the gRPC server and handles the response stream.
-func (m *model) executeTask(content string) tea.Cmd {
-	turnID, requestID, err := m.client.SendTurn(m.ctx, m.conversationID, content)
-	if err != nil {
-		return tui.MsgCmd(tui.ErrorMsg(err))
-	}
-	m.requestToTask[requestID] = turnID
-	m.startedTasks[turnID] = struct{}{}
-
-	select {
-	case m.msgCh <- chat.StreamStartMsg{TaskID: turnID}:
-	case <-m.ctx.Done():
-		return tui.MsgCmd(tui.ErrorMsg(m.ctx.Err()))
-	}
-
-	return tui.NoopCmd
-}
-
-func (m *model) handleSessionUpdate(update *agentv1.HiveSessionResponse) []tea.Cmd {
-	cmds := []tea.Cmd{}
-	if update == nil {
-		return cmds
-	}
-
-	if createConv := update.GetCreateConversation(); createConv != nil {
-		m.conversationID = createConv.GetConversationId()
-		_ = m.content.RegisterConversation(createConv.GetConversationId())
-		return cmds
-	}
-
-	if notification := update.GetNotification(); notification != nil {
-		taskID := m.requestToTask[update.GetInReplyTo()]
-		if errMsg := notification.GetError(); errMsg != "" {
-			if taskID != "" {
-				cmds = append(cmds, tui.MsgCmd(chat.StreamCompleteMsg{
-					Success: false,
-					Content: "",
-					Error:   errors.New(errMsg),
-					TaskID:  taskID,
-				}))
-				m.cleanupTaskTracking(taskID)
-			} else {
-				cmds = append(cmds, tui.MsgCmd(tui.ErrorMsg(errors.New(errMsg))))
-			}
-			return cmds
-		}
-
-		if info := notification.GetInfo(); info != "" {
-			if taskID != "" {
-				cmds = append(cmds, tui.MsgCmd(chat.StreamChunkMsg{
-					Content: info,
-					Status:  "info",
-					TaskID:  taskID,
-				}))
-			} else {
-				cmds = append(cmds, tui.MsgCmd(tui.InfoMsg(info)))
-			}
-			return cmds
-		}
-	}
-
-	if turn := update.GetTurnResponse(); turn != nil {
-		taskID := turn.GetTurnId()
-		if taskID == "" {
-			taskID = m.requestToTask[turn.GetRequestId()]
-		}
-		if taskID != "" {
-			if _, started := m.startedTasks[taskID]; !started {
-				m.startedTasks[taskID] = struct{}{}
-				cmds = append(cmds, tui.MsgCmd(chat.StreamStartMsg{TaskID: taskID}))
-			}
-		}
-
-		if progress := turn.GetUpdate(); progress != nil && taskID != "" {
-			cmds = append(cmds, tui.MsgCmd(chat.StreamChunkMsg{
-				Content: progress.GetContent(),
-				Status:  "in_progress",
-				TaskID:  taskID,
-			}))
-		}
-
-		if completed := turn.GetCompleted(); completed != nil && taskID != "" {
-			if success := completed.GetSuccess(); success != nil {
-				cmds = append(cmds, tui.MsgCmd(chat.StreamCompleteMsg{
-					Success: true,
-					Content: success.GetContent(),
-					Error:   nil,
-					TaskID:  taskID,
-				}))
-				m.cleanupTaskTracking(taskID)
-				return cmds
-			}
-			if failed := completed.GetFailed(); failed != nil {
-				cmds = append(cmds, tui.MsgCmd(chat.StreamCompleteMsg{
-					Success: false,
-					Content: "",
-					Error:   errors.New(failed.GetMessage()),
-					TaskID:  taskID,
-				}))
-				m.cleanupTaskTracking(taskID)
-				return cmds
-			}
-		}
-	}
-
-	if inputRequired := update.GetInputRequired(); inputRequired != nil {
-		taskID := inputRequired.GetTurnId()
-		if taskID != "" {
-			if _, started := m.startedTasks[taskID]; !started {
-				m.startedTasks[taskID] = struct{}{}
-				cmds = append(cmds, tui.MsgCmd(chat.StreamStartMsg{TaskID: taskID}))
-			}
-		}
-		cmds = append(cmds, tui.MsgCmd(chat.FeedbackRequestMsg{
-			ConversationID: inputRequired.GetConversationId(),
-			TurnID:         inputRequired.GetTurnId(),
-			Question:       inputRequired.GetQuestion(),
-		}))
-	}
-
-	return cmds
-}
-
-func (m *model) cleanupTaskTracking(taskID string) {
-	delete(m.startedTasks, taskID)
-	for reqID, currentTaskID := range m.requestToTask {
-		if currentTaskID == taskID {
-			delete(m.requestToTask, reqID)
-		}
-	}
-}
-
-func (m *model) startStreamListener() {
-	go func() {
-		for {
-			select {
-			case <-m.ctx.Done():
-				return
-
-			case update, ok := <-m.responseCh:
-				if !ok {
-					return
-				}
-				select {
-				case m.msgCh <- sessionUpdateMsg{update: update}:
-				case <-m.ctx.Done():
-					return
-				}
-			}
-		}
-	}()
 }
 
 func (m *model) registerConversation(convID string, respCh <-chan *agentv1.HiveSessionResponse) {
