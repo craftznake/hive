@@ -34,41 +34,41 @@ func newChatResponseModel(id string, width int) *chatResponseModel {
 }
 
 // Init implements [tui.Model].
-func (c *chatResponseModel) Init() tea.Cmd {
+func (m *chatResponseModel) Init() tea.Cmd {
 	return tui.NoopCmd
 }
 
 // Update implements [tui.Model].
-func (c *chatResponseModel) Update(msg tea.Msg) tea.Cmd {
+func (m *chatResponseModel) Update(msg tea.Msg) tea.Cmd {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		c.width = msg.Width
+		m.width = msg.Width
 	case StreamStartMsg:
-		c.state = stateThinking
+		m.state = stateThinking
 	case StreamChunkMsg:
-		c.status = msg.Status
-		if c.content != "" {
-			c.content += "\n"
+		m.status = msg.Status
+		if m.content != "" {
+			m.content += "\n"
 		}
 		if msg.Status != "" {
-			c.content += fmt.Sprintf("[%s] %s", msg.Status, msg.Content)
+			m.content += fmt.Sprintf("[%s] %s", msg.Status, msg.Content)
 		} else {
-			c.content += msg.Content
+			m.content += msg.Content
 		}
 	case StreamCompleteMsg:
 		if msg.Success {
-			c.state = stateSucceed
-			c.content = msg.Content
+			m.state = stateSucceed
+			m.content = msg.Content
 		} else {
-			c.state = stateError
-			c.error = msg.Error.Error()
+			m.state = stateError
+			m.error = msg.Error.Error()
 		}
 	}
 	return tui.NoopCmd
 }
 
 // View implements [tui.Model].
-func (c *chatResponseModel) View() string {
+func (m *chatResponseModel) View() string {
 	// Configure card style based on role
 	var (
 		headerTitle string
@@ -77,34 +77,35 @@ func (c *chatResponseModel) View() string {
 
 	headerStyle := lipgloss.NewStyle().
 		Bold(true).
-		Background(tui.InputBg)
-
+		Foreground(tui.Blue).
+		Background(tui.InputBg).
+		Padding(0, 1)
 	contentStyle := lipgloss.NewStyle().
-		Width(c.width-2).
+		Width(m.width-2).
 		Background(tui.InputBg).
 		Foreground(tui.Foreground).
 		Padding(0, 1)
-
 	cardBorder := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
-		Width(c.width)
+		BorderForeground(tui.Blue).
+		Width(m.width)
 
-	switch c.state {
+	switch m.state {
 	case stateThinking:
 		headerTitle = "thinking..."
 		headerStyle = headerStyle.Foreground(tui.Accent)
 		cardBorder = cardBorder.BorderForeground(tui.Accent)
-		content = c.content
+		content = m.content
 	case stateError:
 		headerTitle = "error"
 		headerStyle = headerStyle.Foreground(tui.Red)
 		cardBorder = cardBorder.BorderForeground(tui.Red)
-		content = c.error
+		content = m.error
 	case stateSucceed:
-		headerTitle = "output"
+		headerTitle = "Output"
 		headerStyle = headerStyle.Foreground(tui.Green)
 		cardBorder = cardBorder.BorderForeground(tui.Green)
-		content = c.content
+		content = m.content
 	default:
 		return ""
 	}
