@@ -31,7 +31,7 @@ func NewPipeline(deps Dependencies) *Pipeline {
 }
 
 // Execute executes the full pipeline for a single agent run.
-func (p *Pipeline) Execute(ctx context.Context, state *PipelineState) (*PipelineResult, error) {
+func (p *Pipeline) Execute(ctx context.Context, state *State) (*Result, error) {
 	start := time.Now()
 	for _, stage := range p.pre {
 		_, err := stage.Execute(ctx, state)

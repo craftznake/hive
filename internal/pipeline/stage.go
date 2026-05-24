@@ -19,5 +19,5 @@ type Stage interface {
 	// Name returns a human-readable identifier.
 	Name() string
 	// Execute performs the logics, error will abort the pipeline.
-	Execute(ctx context.Context, state *PipelineState) (StageResult, error)
+	Execute(ctx context.Context, state *State) (StageResult, error)
 }

@@ -22,7 +22,7 @@ func NewExecuteStage(deps *Dependencies) *ExecuteStage {
 }
 
 // Execute implements [Stage].
-func (e *ExecuteStage) Execute(ctx context.Context, state *PipelineState) (StageResult, error) {
+func (e *ExecuteStage) Execute(ctx context.Context, state *State) (StageResult, error) {
 	logger := observability.Logger(state.Ctx)
 	supervisor, err := queen.NewQueenBee(state.Conversation.ID, 10, e.deps.Registry, e.deps.Config.Server.MaxTimeout, e.deps.Provider)
 	if err != nil {
@@ -53,7 +53,6 @@ func (e *ExecuteStage) Execute(ctx context.Context, state *PipelineState) (Stage
 				logger.ErrorContext(ctx, "failed to save conversation to storage, keeps continuing", slog.Any("error", err))
 			}
 
-			// TODO: update state state based on output
 			// Send update to client
 			switch output.Status {
 			case types.SessionStatusCompleted:

@@ -21,7 +21,7 @@ func NewContextStage(deps *Dependencies) *ContextStage {
 
 // Execute implements [Stage].
 // ContextStage populates context into the pipeline state.
-func (c *ContextStage) Execute(ctx context.Context, state *PipelineState) (StageResult, error) {
+func (c *ContextStage) Execute(ctx context.Context, state *State) (StageResult, error) {
 	ctx = observability.ContextWithTraceContext(ctx, observability.NewRootTraceContext())
 
 	eventBusTopic := c.deps.EventBus.Publish(state.Conversation.ID)
